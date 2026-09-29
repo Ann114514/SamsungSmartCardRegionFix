@@ -9,17 +9,23 @@ import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public final class SmartCardRegionFix implements IXposedHookLoadPackage {
-    private static final String TARGET_PACKAGE = "com.samsung.android.samsungpay.gear";
+    private static final String SMART_CARD_PACKAGE = "com.samsung.android.samsungpay.gear";
+    private static final String SAMSUNG_HEALTH_PACKAGE = "com.sec.android.app.shealth";
+    private static final String STEP_SYNC_PACKAGE = "com.samsung.android.swsportplugin";
     private static final String SALES_CODE = "ro.csc.sales_code";
     private static final String COUNTRY_ISO = "ro.csc.countryiso_code";
     private static final String CHINA_ISO = "CN";
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
-        if (!TARGET_PACKAGE.equals(lpparam.packageName)) {
-            return;
+        if (SMART_CARD_PACKAGE.equals(lpparam.packageName)) {
+            installSmartCardHooks(lpparam);
+        } else if (SAMSUNG_HEALTH_PACKAGE.equals(lpparam.packageName)) {
+            installSamsungHealthHooks(lpparam);
         }
+    }
 
+    private static void installSmartCardHooks(XC_LoadPackage.LoadPackageParam lpparam) {
         try {
             hookSystemProperties();
             hookStringResult(
@@ -47,6 +53,39 @@ public final class SmartCardRegionFix implements IXposedHookLoadPackage {
             XposedBridge.log("SmartCardRegionFix: hooks installed in " + lpparam.processName);
         } catch (Throwable error) {
             XposedBridge.log("SmartCardRegionFix: hook installation failed: " + error);
+        }
+    }
+
+    private static void installSamsungHealthHooks(XC_LoadPackage.LoadPackageParam lpparam) {
+        try {
+            Class<?> policyManager = XposedHelpers.findClassIfExists(
+                    "com.samsung.android.service.health.sdkpolicy.SdkPolicyManager",
+                    lpparam.classLoader);
+            if (policyManager == null) {
+                XposedBridge.log("SmartCardRegionFix: Samsung Health policy manager absent in "
+                        + lpparam.processName);
+                return;
+            }
+
+            XposedHelpers.findAndHookMethod(
+                    policyManager,
+                    "validateCallerSignature",
+                    String.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            if (STEP_SYNC_PACKAGE.equals(param.args[0])) {
+                                param.setResult(null);
+                                XposedBridge.log(
+                                        "SmartCardRegionFix: allowed Samsung step sync policy access");
+                            }
+                        }
+                    });
+            XposedBridge.log("SmartCardRegionFix: Samsung Health policy hook installed in "
+                    + lpparam.processName);
+        } catch (Throwable error) {
+            XposedBridge.log("SmartCardRegionFix: Samsung Health hook installation failed: "
+                    + error);
         }
     }
 
