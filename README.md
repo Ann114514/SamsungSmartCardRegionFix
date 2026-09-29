@@ -43,5 +43,6 @@ targetSdk 36
 感谢老板们的使用，如果觉得做得不错可以点个 Star，也可请我杯奶茶。欢迎提出意见、建议或反馈 Bug，您的支持是我最大的动力。
 
 <p align="center">
-  <img src="docs/donate/wechat-pay.jpg" alt="微信支付打赏码" width="360">
+  <img src="docs/donate/wechat-pay.jpg" alt="微信支付打赏码" width="320">
+  <img src="docs/donate/alipay.jpg" alt="支付宝打赏码" width="320">
 </p>
