@@ -3,5 +3,6 @@
     <string-array name="xposed_scope">
         <item>com.samsung.android.samsungpay.gear</item>
         <item>com.sec.android.app.shealth</item>
+        <item>com.samsung.android.agent.storage</item>
     </string-array>
 </resources>

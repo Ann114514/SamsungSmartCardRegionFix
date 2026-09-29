@@ -1,5 +1,9 @@
 package dev.smartcard.regionfix;
 
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
+import android.net.Uri;
+
 import java.lang.reflect.Method;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
@@ -12,6 +16,7 @@ public final class SmartCardRegionFix implements IXposedHookLoadPackage {
     private static final String SMART_CARD_PACKAGE = "com.samsung.android.samsungpay.gear";
     private static final String SAMSUNG_HEALTH_PACKAGE = "com.sec.android.app.shealth";
     private static final String STEP_SYNC_PACKAGE = "com.samsung.android.swsportplugin";
+    private static final String AGENT_STORAGE_PACKAGE = "com.samsung.android.agent.storage";
     private static final String SALES_CODE = "ro.csc.sales_code";
     private static final String COUNTRY_ISO = "ro.csc.countryiso_code";
     private static final String CHINA_ISO = "CN";
@@ -22,6 +27,117 @@ public final class SmartCardRegionFix implements IXposedHookLoadPackage {
             installSmartCardHooks(lpparam);
         } else if (SAMSUNG_HEALTH_PACKAGE.equals(lpparam.packageName)) {
             installSamsungHealthHooks(lpparam);
+        } else if (AGENT_STORAGE_PACKAGE.equals(lpparam.packageName)) {
+            installAgentStorageHooks(lpparam);
+        }
+    }
+
+    private static void installAgentStorageHooks(XC_LoadPackage.LoadPackageParam lpparam) {
+        try {
+            markAsSystemApp(lpparam.appInfo);
+
+            Class<?> applicationPackageManager = XposedHelpers.findClass(
+                    "android.app.ApplicationPackageManager", null);
+
+            XposedBridge.hookAllMethods(
+                    applicationPackageManager,
+                    "getApplicationInfo",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            Object result = param.getResult();
+                            if (result instanceof ApplicationInfo) {
+                                ApplicationInfo info = (ApplicationInfo) result;
+                                if (AGENT_STORAGE_PACKAGE.equals(info.packageName)) {
+                                    markAsSystemApp(info);
+                                }
+                            }
+                        }
+                    });
+
+            XposedBridge.hookAllMethods(
+                    applicationPackageManager,
+                    "getPackageInfo",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            Object result = param.getResult();
+                            if (result instanceof PackageInfo) {
+                                PackageInfo info = (PackageInfo) result;
+                                if (AGENT_STORAGE_PACKAGE.equals(info.packageName)) {
+                                    markAsSystemApp(info.applicationInfo);
+                                }
+                            }
+                        }
+                    });
+
+            installAgentStorageOAuthCompatibilityHooks(lpparam.classLoader);
+
+            XposedBridge.log("SmartCardRegionFix: Agent Storage system-app hooks installed in "
+                    + lpparam.processName);
+        } catch (Throwable error) {
+            XposedBridge.log("SmartCardRegionFix: Agent Storage hook installation failed: "
+                    + error);
+        }
+    }
+
+    private static void installAgentStorageOAuthCompatibilityHooks(ClassLoader classLoader) {
+        Class<?> oauthWebViewClient = XposedHelpers.findClassIfExists(
+                "com.google.android.gms.internal.media_sync.zzqr", classLoader);
+        if (oauthWebViewClient == null) {
+            XposedBridge.log("SmartCardRegionFix: Agent Storage OAuth client class absent");
+            return;
+        }
+
+        XC_MethodHook pageFinishedHook = new XC_MethodHook() {
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) {
+                if (param.hasThrowable() || param.args.length < 2
+                        || !(param.args[1] instanceof String)) {
+                    return;
+                }
+
+                String url = (String) param.args[1];
+                if (!isGoogleOAuthPage(url)) {
+                    return;
+                }
+
+                Object previous = XposedHelpers.getAdditionalInstanceField(
+                        param.thisObject, "regionfix_last_rendered_url");
+                if (url.equals(previous)) {
+                    return;
+                }
+
+                Object listener = XposedHelpers.getObjectField(param.thisObject, "zzh");
+                XposedHelpers.setAdditionalInstanceField(
+                        param.thisObject, "regionfix_last_rendered_url", url);
+                XposedHelpers.callMethod(listener, "onAuthPageRendered");
+                XposedBridge.log(
+                        "SmartCardRegionFix: exposed completed Google OAuth page");
+            }
+        };
+
+        XposedBridge.hookAllMethods(oauthWebViewClient, "onPageFinished", pageFinishedHook);
+        XposedBridge.log("SmartCardRegionFix: Agent Storage OAuth compatibility hooks installed");
+    }
+
+    private static boolean isGoogleOAuthPage(String url) {
+        try {
+            Uri uri = Uri.parse(url);
+            if (!"https".equalsIgnoreCase(uri.getScheme())) {
+                return false;
+            }
+            String host = uri.getHost();
+            return host != null && ("accounts.google.com".equalsIgnoreCase(host)
+                    || "photos.google.com".equalsIgnoreCase(host));
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static void markAsSystemApp(ApplicationInfo info) {
+        if (info != null && AGENT_STORAGE_PACKAGE.equals(info.packageName)) {
+            info.flags |= ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP;
         }
     }
 
